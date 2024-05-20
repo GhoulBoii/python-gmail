@@ -9,7 +9,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from email.message import EmailMessage
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/gmail.readonly"]
 
 def get_credentials():
   creds = None
@@ -62,6 +62,50 @@ def gmail_send_message(from_email,to_email,subject,body):
     print(f"An error occurred: {error}")
     send_message = None
   return send_message
+
+def receive_messages(message_no):
+  creds = get_credentials()
+  service = build("gmail", "v1", credentials=creds)
+  result = service.users().messages().list(maxResults=message_no, userId='me').execute()
+  messages = result.get('messages')
+  for msg in messages:
+      # Get the message from its id
+      txt = service.users().messages().get(userId='me', id=msg['id']).execute()
+
+
+      # Use try-except to avoid any Errors
+      try:
+          # Get value of 'payload' from dictionary 'txt'
+          payload = txt['payload']
+          headers = payload['headers']
+
+          # Look for Subject and Sender Email in the headers
+          for d in headers:
+              if d['name'] == 'Subject':
+                  subject = d['value']
+              if d['name'] == 'From':
+                  sender = d['value']
+
+          # The Body of the message is in Encrypted format. So, we have to decode it.
+          # Get the data and decode it with base 64 decoder.
+          parts = payload.get('parts')[0]
+          data = parts['body']['data']
+          data = data.replace("-","+").replace("_","/")
+          decoded_data = base64.b64decode(data)
+
+          # Now, the data obtained is in lxml. So, we will parse
+          # it with BeautifulSoup library
+          soup = BeautifulSoup(decoded_data , "lxml")
+          body = soup.body()
+
+          # Printing the subject, sender's email and message
+          print("\033[1;33;40mSubject: ", subject)
+          print("\033[1;32mFrom: ", sender)
+          print("Message: ", body)
+          print('\n\n---------------------------------------------------------------------\n\n')
+
+      except:
+          pass
 
 def main():
     print("Script to send an email from gmail in python")
