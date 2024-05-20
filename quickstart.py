@@ -107,6 +107,38 @@ def receive_messages(message_no):
       except:
           pass
 
+def threads():
+  """Display threads with long conversations(>= 3 messages)
+  Return: None
+  """
+  try:
+    creds = get_credentials()
+    service = build("gmail", "v1", credentials=creds)
+    threads = (
+        service.users().threads().list(maxResults=100,userId="me").execute().get("threads", [])
+    )
+    for thread in threads:
+      tdata = (
+          service.users().threads().get(userId="me", id=thread["id"]).execute()
+      )
+      nmsgs = len(tdata["messages"])
+
+      # skip if <3 msgs in thread
+      if nmsgs > 2:
+        msg = tdata["messages"][0]["payload"]
+        subject = ""
+        for header in msg["headers"]:
+          if header["name"] == "Subject":
+            subject = header["value"]
+            break
+        if subject:  # skip if no Subject line
+          print(f"- {subject}, {nmsgs}")
+    return threads
+
+  except HttpError as error:
+    print(f"An error occurred: {error}")
+
+
 def main():
     print("Script to send an email from gmail in python")
     from_email = input("Enter your email address: ")
