@@ -140,12 +140,26 @@ def threads():
 
 
 def main():
-    print("Script to send an email from gmail in python")
-    from_email = input("Enter your email address: ")
-    to_email = input("Enter the receiver's email address: ")
-    subject = input("Enter the subject of the email: ")
-    body = input("Enter the body of the email:\n")
-    gmail_send_message(from_email,to_email,subject,body)
+    print("Python Script to Interact with Gmail")
+    print("Would you like to: ")
+    print("1) Send email")
+    print("2) See your inbox")
+    print("3) Get your recent threads")
+    choice = int(input())
+
+    if choice == 1:
+        from_email = input("Enter your email address: ")
+        to_email = input("Enter the receiver's email address: ")
+        subject = input("Enter the subject of the email: ")
+        body = input("Enter the body of the email:\n")
+        gmail_send_message(from_email,to_email,subject,body)
+    elif choice == 2:
+        message_no = int(input("Enter number of messages you would like to see from your inbox (latest first): "))
+        receive_messages(message_no)
+    elif choice == 3:
+        threads()
+    else:
+        print("Wrong input.")
 
 if __name__ == "__main__":
   main()
