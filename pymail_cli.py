@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.labels",
 ]
 
 
@@ -36,7 +37,34 @@ def get_credentials():
     return creds
 
 
-def gmail_send_message(from_email, to_email, subject, body, html_code):
+def create_label(label_name):
+    creds = get_credentials()
+
+    try:
+        service = build("gmail", "v1", credentials=creds)
+
+        label_body = {"name": label_name}
+        service.users().labels().create(userId="me", body=label_body).execute()
+
+        print("Label has been created")
+    except HttpError as error:
+        print(f"Error: {error}")
+
+
+def add_label(message_id, label_name):
+    creds = get_credentials()
+    try:
+        service = build("gmail", "v1", credentials=creds)
+        labels_to_add = {"addLabelIds": label_name}
+
+        service.users().messages().modify(
+            userId="me", id=message_id, body=labels_to_add
+        )
+    except HttpError as error:
+        print(f"Error: {error}")
+
+
+def send_message(from_email, to_email, subject, body, html_code):
     creds = get_credentials()
 
     try:
@@ -62,7 +90,7 @@ def gmail_send_message(from_email, to_email, subject, body, html_code):
     except HttpError as error:
         print(f"An error occurred: {error}")
         send_message = None
-    return send_message
+    return send_message["id"]
 
 
 def receive_messages(message_no):
@@ -107,7 +135,7 @@ def receive_messages(message_no):
         )
 
 
-def threads() -> None:
+def receieve_threads() -> None:
     try:
         creds = get_credentials()
         service = build("gmail", "v1", credentials=creds)
@@ -158,6 +186,7 @@ def main():
     print("1) Send email")
     print("2) See your inbox")
     print("3) Get your recent threads")
+    print("4) Create label")
     choice = int(input())
 
     if choice == 1:
@@ -166,7 +195,7 @@ def main():
         subject = input("Enter the subject of the email: ")
         body = input("Enter the body of the email:\n")
         html_code = input("Enter any html code: ")
-        gmail_send_message(from_email, to_email, subject, body, html_code)
+        send_message(from_email, to_email, subject, body, html_code)
     elif choice == 2:
         message_no = int(
             input(
@@ -175,7 +204,10 @@ def main():
         )
         receive_messages(message_no)
     elif choice == 3:
-        threads()
+        receieve_threads()
+    elif choice == 4:
+        label_name = input("Enter the name of the label: ")
+        create_label(label_name)
     else:
         print("Wrong input.")
 

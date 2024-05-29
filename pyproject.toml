@@ -1,0 +1,4 @@
+[tool.basedpyright]
+# many settings are not enabled even in strict mode, which is why basedpyright includes an "all" option
+# you can then decide which rules you want to disable
+typeCheckingMode = "basic"
