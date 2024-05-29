@@ -1,7 +1,6 @@
 import os.path
 import base64
 
-import google.auth
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -13,6 +12,7 @@ from bs4 import BeautifulSoup
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify"
     "https://www.googleapis.com/auth/gmail.labels",
 ]
 
@@ -60,6 +60,7 @@ def add_label(message_id, label_name):
         service.users().messages().modify(
             userId="me", id=message_id, body=labels_to_add
         )
+        print("Message has been added to label")
     except HttpError as error:
         print(f"Error: {error}")
 
@@ -147,34 +148,34 @@ def receieve_threads() -> None:
             .get("threads", [])
         )
         for thread in threads:
-            print("NEW THREAD STARTING!")
             tdata = (
                 service.users().threads().get(userId="me", id=thread["id"]).execute()
             )
+            nmsgs = len(tdata["messages"])
+            if nmsgs > 1:
+                print("NEW THREAD STARTING!")
+                msg = tdata["messages"][0]["payload"]
+                subject = ""
+                email_body = ""
 
-            # skip if <3 msgs in thread
-            msg = tdata["messages"][0]["payload"]
-            subject = ""
-            email_body = ""
+                for header in msg["headers"]:
+                    if header["name"] == "Subject":
+                        subject = header["value"]
+                        break
 
-            for header in msg["headers"]:
-                if header["name"] == "Subject":
-                    subject = header["value"]
-                    break
+                try:
+                    data = msg["body"]["data"]
+                    data = data.replace("-", "+").replace("_", "/")
+                    decoded_data = base64.b64decode(data)
+                    soup = BeautifulSoup(decoded_data, "lxml")
+                    email_body = soup.body()
 
-            try:
-                data = msg["body"]["data"]
-                data = data.replace("-", "+").replace("_", "/")
-                decoded_data = base64.b64decode(data)
-                soup = BeautifulSoup(decoded_data, "lxml")
-                email_body = soup.body()
+                except KeyError:
+                    print("No body found")
 
-            except KeyError:
-                print("No body found")
-
-            if subject:  # skip if no Subject line
-                print(f"- {subject}\n\n{email_body}")
-        return threads
+                if subject:  # skip if no Subject line
+                    print(f"- {subject}\n\n{email_body}")
+            return threads
 
     except HttpError as error:
         print(f"An error occurred: {error}")
