@@ -37,13 +37,28 @@ def get_credentials():
     return creds
 
 
+def get_label_id(label_name):
+    creds = get_credentials()
+
+    try:
+        service = build("gmail", "v1", credentials=creds)
+        labels = service.users().labels().list(userId="me").execute()
+        for label in labels["labels"]:
+            if label["name"] == label_name:
+                return label["id"]
+        return None
+    except Exception as error:
+        print(f"Error: {error}")
+
+
 def create_label(label_name):
     creds = get_credentials()
 
     try:
         service = build("gmail", "v1", credentials=creds)
+        label_id = get_label_id(label_name)
 
-        label_body = {"name": label_name}
+        label_body = {"addLabelIds": [label_id]}
         service.users().labels().create(userId="me", body=label_body).execute()
 
         print("Label has been created")
@@ -59,7 +74,7 @@ def add_label(message_id, label_name):
 
         service.users().messages().modify(
             userId="me", id=message_id, body=labels_to_add
-        )
+        ).execute()
         print("Message has been added to label")
     except HttpError as error:
         print(f"Error: {error}")
@@ -91,7 +106,7 @@ def send_message(from_email, to_email, subject, body, html_code):
     except HttpError as error:
         print(f"An error occurred: {error}")
         send_message = None
-    return send_message["id"]
+    return send_message
 
 
 def receive_messages(message_no):
@@ -136,7 +151,7 @@ def receive_messages(message_no):
         )
 
 
-def receieve_threads() -> None:
+def receive_threads() -> None:
     try:
         creds = get_credentials()
         service = build("gmail", "v1", credentials=creds)
@@ -205,7 +220,7 @@ def main():
         )
         receive_messages(message_no)
     elif choice == 3:
-        receieve_threads()
+        receive_threads()
     elif choice == 4:
         label_name = input("Enter the name of the label: ")
         create_label(label_name)
