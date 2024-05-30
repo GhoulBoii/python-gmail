@@ -109,7 +109,7 @@ def send_message(from_email, to_email, subject, body, html_code):
     return send_message
 
 
-def receive_messages(message_no):
+def get_messages(message_no):
     creds = get_credentials()
     service = build("gmail", "v1", credentials=creds)
     result = (
@@ -151,7 +151,53 @@ def receive_messages(message_no):
         )
 
 
-def receive_threads() -> None:
+def get_threads_in_label(label_name: str) -> None:
+    try:
+        creds = get_credentials()
+        service = build("gmail", "v1", credentials=creds)
+        label_id = get_label_id(label_name)
+        threads = (
+            service.users()
+            .threads()
+            .list(maxResults=100, userId="me", labelIds=[label_id])
+            .execute()
+            .get("threads", [])
+        )
+        for thread in threads:
+            tdata = (
+                service.users().threads().get(userId="me", id=thread["id"]).execute()
+            )
+            nmsgs = len(tdata["messages"])
+            if nmsgs > 1:
+                print("NEW THREAD STARTING!")
+                msg = tdata["messages"][0]["payload"]
+                subject = ""
+                email_body = ""
+
+                for header in msg["headers"]:
+                    if header["name"] == "Subject":
+                        subject = header["value"]
+                        break
+
+                try:
+                    data = msg["body"]["data"]
+                    data = data.replace("-", "+").replace("_", "/")
+                    decoded_data = base64.b64decode(data)
+                    soup = BeautifulSoup(decoded_data, "lxml")
+                    email_body = soup.body()
+
+                except KeyError:
+                    print("No body found")
+
+                if subject:  # skip if no Subject line
+                    print(f"- {subject}\n\n{email_body}")
+            return threads
+
+    except HttpError as error:
+        print(f"An error occurred: {error}")
+
+
+def get_threads() -> None:
     try:
         creds = get_credentials()
         service = build("gmail", "v1", credentials=creds)
@@ -203,6 +249,7 @@ def main():
     print("2) See your inbox")
     print("3) Get your recent threads")
     print("4) Create label")
+    print("5) Get your recent threads in a label")
     choice = int(input())
 
     if choice == 1:
@@ -218,12 +265,15 @@ def main():
                 "Enter number of messages you would like to see from your inbox (latest first): "
             )
         )
-        receive_messages(message_no)
+        get_messages(message_no)
     elif choice == 3:
-        receive_threads()
+        get_threads()
     elif choice == 4:
         label_name = input("Enter the name of the label: ")
         create_label(label_name)
+    elif choice == 5:
+        label_name = input("Enter tha name of the label: ")
+        get_threads_in_label(label_name)
     else:
         print("Wrong input.")
 
