@@ -151,7 +151,7 @@ def get_messages(message_no):
         )
 
 
-def get_threads_in_label(label_name: str) -> None:
+def get_threads_in_label(label_name: str) -> str | None:
     try:
         creds = get_credentials()
         service = build("gmail", "v1", credentials=creds)
@@ -190,14 +190,15 @@ def get_threads_in_label(label_name: str) -> None:
                     print("No body found")
 
                 if subject:  # skip if no Subject line
-                    print(f"- {subject}\n\n{email_body}")
-            return threads
+                    formatted_string = f"{subject}\n\n{email_body}"
+                    print(formatted_string)
+            return formatted_string
 
     except HttpError as error:
         print(f"An error occurred: {error}")
 
 
-def get_threads() -> None:
+def get_threads() -> str | None:
     try:
         creds = get_credentials()
         service = build("gmail", "v1", credentials=creds)
@@ -235,8 +236,9 @@ def get_threads() -> None:
                     print("No body found")
 
                 if subject:  # skip if no Subject line
-                    print(f"- {subject}\n\n{email_body}")
-            return threads
+                    formatted_string = f"{subject}\n\n{email_body}"
+                    print(formatted_string)
+            return formatted_string
 
     except HttpError as error:
         print(f"An error occurred: {error}")
