@@ -69,8 +69,9 @@ def create_label(label_name):
 def add_label(message_id, label_name):
     creds = get_credentials()
     try:
+        label_id = get_label_id(label_name)
         service = build("gmail", "v1", credentials=creds)
-        labels_to_add = {"addLabelIds": label_name}
+        labels_to_add = {"addLabelIds": [label_id]}
 
         service.users().messages().modify(
             userId="me", id=message_id, body=labels_to_add
@@ -78,6 +79,18 @@ def add_label(message_id, label_name):
         print("Message has been added to label")
     except HttpError as error:
         print(f"Error: {error}")
+
+
+def decode_body(message):
+    body = ""
+    if "data" in message["payload"]["body"]:
+        body = base64.urlsafe_b64decode(message["payload"]["body"]["data"]).decode(
+            "utf-8"
+        )
+    elif "parts" in message["payload"]:
+        for part in message["payload"]["parts"]:
+            body += base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+    return body
 
 
 def send_message(from_email, to_email, subject, body, html_code):
@@ -146,16 +159,37 @@ def get_messages(message_no):
         print("\033[1;33;40mSubject: ", subject)
         print("\033[1;33;40mFrom: ", sender)
         print("Message: ", body)
-        print(
-            "\n\n---------------------------------------------------------------------\n\n"
-        )
+        print("-" * 50)
 
 
-def get_threads_in_label(label_name: str) -> str | None:
+def get_emails_from_thread(thread_id):
+    emails = []
+    creds = get_credentials()
+    service = build("gmail", "v1", credentials=creds)
+    thread = service.users().threads().get(userId="me", id=thread_id).execute()
+    messages = thread["messages"]
+    for message in messages:
+        subject = ""
+        body = ""
+        headers = message["payload"]["headers"]
+        for header in headers:
+            if header["name"] == "Subject":
+                subject = header["value"]
+        body = decode_body(message)
+        emails.append({"subject": subject, "body": body})
+    return emails
+
+
+def get_threads(label_name: str | None) -> list:
     try:
+        result = []
+        if label_name:
+            label_id = get_label_id(label_name)
+        else:
+            label_id = "INBOX"
+
         creds = get_credentials()
         service = build("gmail", "v1", credentials=creds)
-        label_id = get_label_id(label_name)
         threads = (
             service.users()
             .threads()
@@ -164,82 +198,11 @@ def get_threads_in_label(label_name: str) -> str | None:
             .get("threads", [])
         )
         for thread in threads:
-            tdata = (
-                service.users().threads().get(userId="me", id=thread["id"]).execute()
-            )
-            nmsgs = len(tdata["messages"])
-            if nmsgs > 1:
-                print("NEW THREAD STARTING!")
-                msg = tdata["messages"][0]["payload"]
-                subject = ""
-                email_body = ""
-
-                for header in msg["headers"]:
-                    if header["name"] == "Subject":
-                        subject = header["value"]
-                        break
-
-                try:
-                    data = msg["body"]["data"]
-                    data = data.replace("-", "+").replace("_", "/")
-                    decoded_data = base64.b64decode(data)
-                    soup = BeautifulSoup(decoded_data, "lxml")
-                    email_body = soup.body()
-
-                except KeyError:
-                    print("No body found")
-
-                if subject:  # skip if no Subject line
-                    formatted_string = f"{subject}\n\n{email_body}"
-                    print(formatted_string)
-            return formatted_string
-
-    except HttpError as error:
-        print(f"An error occurred: {error}")
-
-
-def get_threads() -> str | None:
-    try:
-        creds = get_credentials()
-        service = build("gmail", "v1", credentials=creds)
-        threads = (
-            service.users()
-            .threads()
-            .list(maxResults=100, userId="me")
-            .execute()
-            .get("threads", [])
-        )
-        for thread in threads:
-            tdata = (
-                service.users().threads().get(userId="me", id=thread["id"]).execute()
-            )
-            nmsgs = len(tdata["messages"])
-            if nmsgs > 1:
-                print("NEW THREAD STARTING!")
-                msg = tdata["messages"][0]["payload"]
-                subject = ""
-                email_body = ""
-
-                for header in msg["headers"]:
-                    if header["name"] == "Subject":
-                        subject = header["value"]
-                        break
-
-                try:
-                    data = msg["body"]["data"]
-                    data = data.replace("-", "+").replace("_", "/")
-                    decoded_data = base64.b64decode(data)
-                    soup = BeautifulSoup(decoded_data, "lxml")
-                    email_body = soup.body()
-
-                except KeyError:
-                    print("No body found")
-
-                if subject:  # skip if no Subject line
-                    formatted_string = f"{subject}\n\n{email_body}"
-                    print(formatted_string)
-            return formatted_string
-
+            thread_id = thread["id"]
+            emails = get_emails_from_thread(thread_id)
+            for email in emails:
+                result.append(email)
+        return result
     except HttpError as error:
         print(f"An error occurred: {error}")
 
@@ -251,7 +214,6 @@ def main():
     print("2) See your inbox")
     print("3) Get your recent threads")
     print("4) Create label")
-    print("5) Get your recent threads in a label")
     choice = int(input())
 
     if choice == 1:
@@ -269,13 +231,11 @@ def main():
         )
         get_messages(message_no)
     elif choice == 3:
-        get_threads()
+        label_name = input("Enter the name of the label: ")
+        get_threads_in_label(label_name)
     elif choice == 4:
         label_name = input("Enter the name of the label: ")
         create_label(label_name)
-    elif choice == 5:
-        label_name = input("Enter tha name of the label: ")
-        get_threads_in_label(label_name)
     else:
         print("Wrong input.")
 
