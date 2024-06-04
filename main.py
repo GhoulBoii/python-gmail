@@ -1,5 +1,6 @@
 import os.path
 import base64
+import time
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -101,6 +102,22 @@ def decode_body(message):
     return body
 
 
+def check_email_bounced_status(thread_id: str) -> None:
+    time.sleep(2)
+    creds = get_credentials()
+    service = build("gmail", "v1", credentials=creds)
+    messages = (
+        service.users()
+        .messages()
+        .list(userId="me", q="from:mailer-daemon@googlemail.com")
+        .execute()
+        .get("messages", [])
+    )
+    for msg in messages:
+        if msg["threadId"] == thread_id:
+            raise Exception("Email bounced back. Check email addresses again.")
+
+
 def send_message(from_email, to_email, subject, body, html_code):
     creds = get_credentials()
 
@@ -119,13 +136,14 @@ def send_message(from_email, to_email, subject, body, html_code):
         encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
         create_message = {"raw": encoded_message}
-        send_message = (
+        sent_message = (
             service.users().messages().send(userId="me", body=create_message).execute()
         )
+        check_email_bounced_status(sent_message["threadId"])
     except HttpError as error:
         print(f"An error occurred: {error}")
-        send_message = None
-    return send_message
+        sent_message = None
+    return sent_message
 
 
 def get_messages(message_no):
