@@ -78,6 +78,13 @@ def add_label(message_id, label_name):
         print(f"Error: {error}")
 
 
+def get_thread_id(message_id):
+    creds = get_credentials()
+    service = build("gmail", "v1", credentials=creds)
+    message = service.users().messages().get(userId="me", id=message_id).execute()
+    return message["threadId"]
+
+
 def decode_body(message):
     body = ""
     try:
