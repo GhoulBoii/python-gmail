@@ -215,7 +215,7 @@ def get_threads(label_name: str | None, to_email: str) -> list[str] | None:
         threads = (
             service.users()
             .threads()
-            .list(maxResults=100, userId="me", labelIds=[label_id])
+            .list(maxResults=100, userId="me", q=f"to:{to_email}", labelIds=[label_id])
             .execute()
             .get("threads", [])
         )
