@@ -1,15 +1,16 @@
-import os.path
 import base64
+import os
 import time
+from email.message import EmailMessage
 
+from bs4 import BeautifulSoup
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from email.message import EmailMessage
-from bs4 import BeautifulSoup
 
+# Define the scopes required for the Gmail API
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -19,6 +20,7 @@ SCOPES = [
 
 
 def get_credentials():
+    """Gets user credentials for Gmail API."""
     creds = None
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
@@ -40,6 +42,7 @@ def build_service():
 
 
 def get_label_id(service, label_name):
+    """Fetches the ID of a label given its name."""
     try:
         labels = service.users().labels().list(userId="me").execute()
         for label in labels["labels"]:
@@ -48,12 +51,13 @@ def get_label_id(service, label_name):
         return None
     except Exception as error:
         print(f"Error: {error}")
+        return None
 
 
 def create_label(service, label_name):
+    """Creates a new label in the user's Gmail account."""
     try:
         label_id = get_label_id(service, label_name)
-
         label_body = {"addLabelIds": [label_id]}
         service.users().labels().create(userId="me", body=label_body).execute()
     except HttpError:
@@ -61,6 +65,7 @@ def create_label(service, label_name):
 
 
 def add_label(service, message_id, label_name):
+    """Adds a label to a message."""
     try:
         label_id = get_label_id(service, label_name)
         labels_to_add = {"addLabelIds": [label_id]}
@@ -69,15 +74,17 @@ def add_label(service, message_id, label_name):
             userId="me", id=message_id, body=labels_to_add
         ).execute()
     except HttpError as error:
-        print(f"Error: {error}")
+        print(f"Error adding label: {error}")
 
 
 def get_thread_id(service, message_id):
+    """Fetches the thread ID for a given message."""
     message = service.users().messages().get(userId="me", id=message_id).execute()
     return message["threadId"]
 
 
 def decode_body(message):
+    """Decodes the body of a message."""
     body = ""
     try:
         if "data" in message["payload"]["body"]:
@@ -88,110 +95,106 @@ def decode_body(message):
             for part in message["payload"]["parts"]:
                 body += base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
     except KeyError as e:
-        print(f"Error: {e}")
-        body = ""
+        print(f"Error decoding body: {e}")
     return body
 
 
-def check_email_bounced_status(service, thread_id: str) -> None:
+def check_email_bounced_status(service, thread_id):
+    """Checks if an email has bounced back."""
     time.sleep(2)
-    messages = (
-        service.users()
-        .messages()
-        .list(userId="me", q="from:mailer-daemon@googlemail.com")
-        .execute()
-        .get("messages", [])
-    )
-    for msg in messages:
-        if msg["threadId"] == thread_id:
-            raise Exception("Email bounced back. Check email addresses again.")
+    try:
+        messages = (
+            service.users()
+            .messages()
+            .list(userId="me", q="from:mailer-daemon@googlemail.com")
+            .execute()
+            .get("messages", [])
+        )
+        for msg in messages:
+            if msg["threadId"] == thread_id:
+                raise Exception("Email bounced back. Check email addresses again.")
+    except HttpError as error:
+        print(f"Error checking email bounce status: {error}")
 
 
 def send_message(service, from_email, to_email, subject, body, html_code):
+    """Sends an email with the specified details."""
     try:
         message = EmailMessage()
-
-        body += html_code
-        message.set_content(body, subtype="html")
-
+        message.set_content(body + html_code, subtype="html")
         message["To"] = to_email
         message["From"] = from_email
         message["Subject"] = subject
-
-        # encoded message
         encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-
         create_message = {"raw": encoded_message}
         sent_message = (
             service.users().messages().send(userId="me", body=create_message).execute()
         )
         check_email_bounced_status(service, sent_message["threadId"])
+        return sent_message
     except HttpError as error:
-        print(f"An error occurred: {error}")
-        sent_message = None
-    return sent_message
+        print(f"Error sending message: {error}")
+        return None
 
 
 def get_messages(service, message_no):
-    result = (
-        service.users().messages().list(maxResults=message_no, userId="me").execute()
-    )
-    messages = result.get("messages")
-    for msg in messages:
-        # Get the message from its id
-        txt = service.users().messages().get(userId="me", id=msg["id"]).execute()
-        # Get value of 'payload' from dictionary 'txt'
-        payload = txt["payload"]
-        headers = payload["headers"]
-
-        # Look for Subject and Sender Email in the headers
-        for d in headers:
-            if d["name"] == "Subject":
-                subject = d["value"]
-            if d["name"] == "From":
-                sender = d["value"]
-
-        # The Body of the message is in Encrypted format. So, we have to decode it.
-        # Get the data and decode it with base 64 decoder.
-        parts = payload.get("parts")[0]
-        data = parts["body"]["data"]
-        data = data.replace("-", "+").replace("_", "/")
-        decoded_data = base64.b64decode(data)
-
-        # Now, the data obtained is in lxml. So, we will parse
-        # it with BeautifulSoup library
-        soup = BeautifulSoup(decoded_data, "lxml")
-        body = soup.body()
-
-        # Printing the subject, sender's email and message
-        return subject, sender, body
+    """Fetches a specified number of recent messages."""
+    try:
+        result = (
+            service.users()
+            .messages()
+            .list(maxResults=message_no, userId="me")
+            .execute()
+        )
+        messages = result.get("messages", [])
+        for msg in messages:
+            txt = service.users().messages().get(userId="me", id=msg["id"]).execute()
+            payload = txt["payload"]
+            headers = payload["headers"]
+            subject, sender = "", ""
+            for d in headers:
+                if d["name"] == "Subject":
+                    subject = d["value"]
+                if d["name"] == "From":
+                    sender = d["value"]
+            parts = payload.get("parts", [])[0]
+            data = parts["body"]["data"]
+            data = data.replace("-", "+").replace("_", "/")
+            decoded_data = base64.b64decode(data)
+            soup = BeautifulSoup(decoded_data, "lxml")
+            body = soup.body()
+            return subject, sender, body
+    except HttpError as error:
+        print(f"Error fetching messages: {error}")
+        return None
 
 
 def get_emails_from_thread(service, thread_id):
-    emails = []
-    thread = service.users().threads().get(userId="me", id=thread_id).execute()
-    messages = thread["messages"]
-    for message in messages:
-        if len(messages) > 1:
-            subject = ""
-            body = ""
-            headers = message["payload"]["headers"]
-            for header in headers:
-                if header["name"] == "Subject":
-                    subject = header["value"]
-            body = decode_body(message)
-            emails.append({"subject": subject, "body": body})
-    return emails
+    """Fetches all emails in a specified thread."""
+    try:
+        emails = []
+        thread = service.users().threads().get(userId="me", id=thread_id).execute()
+        messages = thread.get("messages", [])
+        for message in messages:
+            if len(messages) > 1:
+                subject, body = "", ""
+                headers = message["payload"]["headers"]
+                for header in headers:
+                    if header["name"] == "Subject":
+                        subject = header["value"]
+                body = decode_body(message)
+                emails.append({"subject": subject, "body": body})
+        return emails
+    except HttpError as error:
+        print(f"Error fetching emails from thread: {error}")
+        return []
 
 
-def get_threads(service, label_name: str | None, to_email: str) -> list[str] | None:
+def get_threads(service, label_name, to_email):
+    """Fetches threads based on label and recipient email."""
     try:
         result = []
-        if label_name:
-            label_id = get_label_id(service, label_name)
-        else:
-            label_id = "INBOX"
-
+        label_id = get_label_id(service, label_name) if label_name else "INBOX"
         threads = (
             service.users()
             .threads()
@@ -202,11 +205,11 @@ def get_threads(service, label_name: str | None, to_email: str) -> list[str] | N
         for thread in threads:
             thread_id = thread["id"]
             emails = get_emails_from_thread(service, thread_id)
-            for email in emails:
-                result.append(email)
+            result.extend(emails)
         return result
     except HttpError as error:
-        print(f"An error occurred: {error}")
+        print(f"Error fetching threads: {error}")
+        return []
 
 
 def main():
@@ -217,36 +220,38 @@ def main():
     print("2) See your inbox")
     print("3) Get your recent threads")
     print("4) Create label")
-    choice = int(input())
+    choice = int(input("Enter your choice: "))
 
     if choice == 1:
         from_email = input("Enter your email address: ")
         to_email = input("Enter the receiver's email address: ")
         subject = input("Enter the subject of the email: ")
         body = input("Enter the body of the email:\n")
-        html_code = input("Enter any html code: ")
+        html_code = input("Enter any HTML code: ")
         send_message(service, from_email, to_email, subject, body, html_code)
     elif choice == 2:
         message_no = int(
             input(
-                "Enter number of messages you would like to see from your inbox (latest first): "
+                "Enter the number of messages to display from your inbox (latest first): "
             )
         )
-        get_messages_obj = get_messages(service, message_no)
-        print("\033[1;33;40mSubject: ", get_messages_obj[0])
-        print("\033[1;33;40mFrom: ", get_messages_obj[1])
-        print("Message: ", get_messages_obj[2])
-        print("-" * 50)
-
+        messages = get_messages(service, message_no)
+        if messages:
+            print("\033[1;33;40mSubject: ", messages[0])
+            print("\033[1;33;40mFrom: ", messages[1])
+            print("Message: ", messages[2])
+            print("-" * 50)
     elif choice == 3:
-        label_name = input("Enter the name of the label: ")
-        to_email = input("Enter the email from which you want the threads: ")
-        get_threads(service, label_name, to_email)
+        label_name = input("Enter the name of the label (or leave blank for INBOX): ")
+        to_email = input("Enter the recipient email address: ")
+        threads = get_threads(service, label_name, to_email)
+        for email in threads:
+            print(f"Subject: {email['subject']}\nBody: {email['body']}\n{'-'*50}")
     elif choice == 4:
         label_name = input("Enter the name of the label: ")
         create_label(service, label_name)
     else:
-        print("Wrong input.")
+        print("Invalid choice.")
 
 
 if __name__ == "__main__":
