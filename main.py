@@ -2,7 +2,7 @@ import base64
 import os
 import time
 from email.message import EmailMessage
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 from bs4 import BeautifulSoup
 from google.auth.transport.requests import Request
@@ -266,3 +266,23 @@ def main() -> None:
             )
         )
         messages = get_messages(service, message_no)
+        if messages:
+            print("\033[1;33;40mSubject: ", messages[0])
+            print("\033[1;33;40mFrom: ", messages[1])
+            print("Message: ", messages[2])
+            print("-" * 50)
+    elif choice == 3:
+        label_name = input("Enter the name of the label (or leave blank for INBOX): ")
+        to_email = input("Enter the recipient email address: ")
+        threads = get_threads(service, label_name, to_email)
+        for email in threads:
+            print(f"Subject: {email['subject']}\nBody: {email['body']}\n{'-'*50}")
+    elif choice == 4:
+        label_name = input("Enter the name of the label: ")
+        create_label(service, label_name)
+    else:
+        print("Invalid choice.")
+
+
+if __name__ == "__main__":
+    main()
