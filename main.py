@@ -2,15 +2,14 @@ import base64
 import os
 import time
 from email.message import EmailMessage
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from bs4 import BeautifulSoup
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
-from googleapiclient.discovery import Resource
 
 # Define the scopes required for the Gmail API
 SCOPES = [
@@ -42,8 +41,10 @@ def build_service() -> Optional[Resource]:
     try:
         creds = get_credentials()
         service = build("gmail", "v1", credentials=creds)
+        if service is None:
+            raise Exception("Failed to initialize Gmail service.")
         return service
-    except Exception as error:
+    except Exception:
         print(f"Error building the Gmail service: {error}")
         return None
 
@@ -65,25 +66,18 @@ def create_label(service: Resource, label_name: str) -> None:
     """Creates a new label in the user's Gmail account."""
     try:
         label_id = get_label_id(service, label_name)
-        if label_id:
-            print(f"Label '{label_name}' already exists.")
-            return
-
-        label_body = {"name": label_name}
+        label_body = {"addLabelIds": [label_id]}
         service.users().labels().create(userId="me", body=label_body).execute()
-    except HttpError as error:
-        print(f"Error creating label: {error}")
+    except HttpError:
+        print("Invalid label name or label already exists.")
 
 
 def add_label(service: Resource, message_id: str, label_name: str) -> None:
     """Adds a label to a message."""
     try:
         label_id = get_label_id(service, label_name)
-        if not label_id:
-            print(f"Label '{label_name}' does not exist.")
-            return
-
         labels_to_add = {"addLabelIds": [label_id]}
+
         service.users().messages().modify(
             userId="me", id=message_id, body=labels_to_add
         ).execute()
@@ -201,13 +195,14 @@ def get_emails_from_thread(service: Resource, thread_id: str) -> List[dict]:
         thread = service.users().threads().get(userId="me", id=thread_id).execute()
         messages = thread.get("messages", [])
         for message in messages:
-            subject, body = "", ""
-            headers = message["payload"]["headers"]
-            for header in headers:
-                if header["name"] == "Subject":
-                    subject = header["value"]
-            body = decode_body(message)
-            emails.append({"subject": subject, "body": body})
+            if len(messages) > 1:
+                subject, body = "", ""
+                headers = message["payload"]["headers"]
+                for header in headers:
+                    if header["name"] == "Subject":
+                        subject = header["value"]
+                body = decode_body(message)
+                emails.append({"subject": subject, "body": body})
         return emails
     except HttpError as error:
         print(f"Error fetching emails from thread: {error}")
@@ -240,9 +235,6 @@ def get_threads(
 
 def main() -> None:
     service = build_service()
-    if service is None:
-        print("Failed to initialize Gmail service.")
-        return
 
     print("Python Script to Interact with Gmail")
     print("Would you like to: ")
