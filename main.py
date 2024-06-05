@@ -2,6 +2,7 @@ import base64
 import os
 import time
 from email.message import EmailMessage
+from typing import List, Optional, Tuple, Union
 
 from bs4 import BeautifulSoup
 from google.auth.transport.requests import Request
@@ -9,6 +10,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from googleapiclient.discovery import Resource
 
 # Define the scopes required for the Gmail API
 SCOPES = [
@@ -19,7 +21,7 @@ SCOPES = [
 ]
 
 
-def get_credentials():
+def get_credentials() -> Credentials:
     """Gets user credentials for Gmail API."""
     creds = None
     if os.path.exists("token.json"):
@@ -35,13 +37,18 @@ def get_credentials():
     return creds
 
 
-def build_service():
-    creds = get_credentials()
-    service = build("gmail", "v1", credentials=creds)
-    return service
+def build_service() -> Optional[Resource]:
+    """Builds and returns a Gmail API service object."""
+    try:
+        creds = get_credentials()
+        service = build("gmail", "v1", credentials=creds)
+        return service
+    except Exception as error:
+        print(f"Error building the Gmail service: {error}")
+        return None
 
 
-def get_label_id(service, label_name):
+def get_label_id(service: Resource, label_name: str) -> Optional[str]:
     """Fetches the ID of a label given its name."""
     try:
         labels = service.users().labels().list(userId="me").execute()
@@ -54,22 +61,29 @@ def get_label_id(service, label_name):
         return None
 
 
-def create_label(service, label_name):
+def create_label(service: Resource, label_name: str) -> None:
     """Creates a new label in the user's Gmail account."""
     try:
         label_id = get_label_id(service, label_name)
-        label_body = {"addLabelIds": [label_id]}
+        if label_id:
+            print(f"Label '{label_name}' already exists.")
+            return
+
+        label_body = {"name": label_name}
         service.users().labels().create(userId="me", body=label_body).execute()
-    except HttpError:
-        print("Invalid label name or label already exists.")
+    except HttpError as error:
+        print(f"Error creating label: {error}")
 
 
-def add_label(service, message_id, label_name):
+def add_label(service: Resource, message_id: str, label_name: str) -> None:
     """Adds a label to a message."""
     try:
         label_id = get_label_id(service, label_name)
-        labels_to_add = {"addLabelIds": [label_id]}
+        if not label_id:
+            print(f"Label '{label_name}' does not exist.")
+            return
 
+        labels_to_add = {"addLabelIds": [label_id]}
         service.users().messages().modify(
             userId="me", id=message_id, body=labels_to_add
         ).execute()
@@ -77,13 +91,17 @@ def add_label(service, message_id, label_name):
         print(f"Error adding label: {error}")
 
 
-def get_thread_id(service, message_id):
+def get_thread_id(service: Resource, message_id: str) -> Optional[str]:
     """Fetches the thread ID for a given message."""
-    message = service.users().messages().get(userId="me", id=message_id).execute()
-    return message["threadId"]
+    try:
+        message = service.users().messages().get(userId="me", id=message_id).execute()
+        return message.get("threadId")
+    except HttpError as error:
+        print(f"Error getting thread ID: {error}")
+        return None
 
 
-def decode_body(message):
+def decode_body(message: dict) -> str:
     """Decodes the body of a message."""
     body = ""
     try:
@@ -99,7 +117,7 @@ def decode_body(message):
     return body
 
 
-def check_email_bounced_status(service, thread_id):
+def check_email_bounced_status(service: Resource, thread_id: str) -> None:
     """Checks if an email has bounced back."""
     time.sleep(2)
     try:
@@ -117,7 +135,14 @@ def check_email_bounced_status(service, thread_id):
         print(f"Error checking email bounce status: {error}")
 
 
-def send_message(service, from_email, to_email, subject, body, html_code):
+def send_message(
+    service: Resource,
+    from_email: str,
+    to_email: str,
+    subject: str,
+    body: str,
+    html_code: str,
+) -> Optional[dict]:
     """Sends an email with the specified details."""
     try:
         message = EmailMessage()
@@ -137,7 +162,7 @@ def send_message(service, from_email, to_email, subject, body, html_code):
         return None
 
 
-def get_messages(service, message_no):
+def get_messages(service: Resource, message_no: int) -> Optional[Tuple[str, str, str]]:
     """Fetches a specified number of recent messages."""
     try:
         result = (
@@ -163,34 +188,35 @@ def get_messages(service, message_no):
             decoded_data = base64.b64decode(data)
             soup = BeautifulSoup(decoded_data, "lxml")
             body = soup.body()
-            return subject, sender, body
+            return subject, sender, str(body)
     except HttpError as error:
         print(f"Error fetching messages: {error}")
         return None
 
 
-def get_emails_from_thread(service, thread_id):
+def get_emails_from_thread(service: Resource, thread_id: str) -> List[dict]:
     """Fetches all emails in a specified thread."""
     try:
         emails = []
         thread = service.users().threads().get(userId="me", id=thread_id).execute()
         messages = thread.get("messages", [])
         for message in messages:
-            if len(messages) > 1:
-                subject, body = "", ""
-                headers = message["payload"]["headers"]
-                for header in headers:
-                    if header["name"] == "Subject":
-                        subject = header["value"]
-                body = decode_body(message)
-                emails.append({"subject": subject, "body": body})
+            subject, body = "", ""
+            headers = message["payload"]["headers"]
+            for header in headers:
+                if header["name"] == "Subject":
+                    subject = header["value"]
+            body = decode_body(message)
+            emails.append({"subject": subject, "body": body})
         return emails
     except HttpError as error:
         print(f"Error fetching emails from thread: {error}")
         return []
 
 
-def get_threads(service, label_name, to_email):
+def get_threads(
+    service: Resource, label_name: Optional[str], to_email: str
+) -> List[dict]:
     """Fetches threads based on label and recipient email."""
     try:
         result = []
@@ -212,8 +238,12 @@ def get_threads(service, label_name, to_email):
         return []
 
 
-def main():
+def main() -> None:
     service = build_service()
+    if service is None:
+        print("Failed to initialize Gmail service.")
+        return
+
     print("Python Script to Interact with Gmail")
     print("Would you like to: ")
     print("1) Send email")
@@ -236,23 +266,3 @@ def main():
             )
         )
         messages = get_messages(service, message_no)
-        if messages:
-            print("\033[1;33;40mSubject: ", messages[0])
-            print("\033[1;33;40mFrom: ", messages[1])
-            print("Message: ", messages[2])
-            print("-" * 50)
-    elif choice == 3:
-        label_name = input("Enter the name of the label (or leave blank for INBOX): ")
-        to_email = input("Enter the recipient email address: ")
-        threads = get_threads(service, label_name, to_email)
-        for email in threads:
-            print(f"Subject: {email['subject']}\nBody: {email['body']}\n{'-'*50}")
-    elif choice == 4:
-        label_name = input("Enter the name of the label: ")
-        create_label(service, label_name)
-    else:
-        print("Invalid choice.")
-
-
-if __name__ == "__main__":
-    main()
