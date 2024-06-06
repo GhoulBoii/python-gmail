@@ -41,12 +41,9 @@ def build_service() -> Optional[Resource]:
     try:
         creds = get_credentials()
         service = build("gmail", "v1", credentials=creds)
-        if service is None:
-            raise Exception("Failed to initialize Gmail service.")
         return service
-    except Exception as error:
-        print(f"Error building the Gmail service: {error}")
-        return None
+    except FileNotFoundError as error:
+        raise FileNotFoundError(f"Error building the Gmail service: {error}")
 
 
 def get_label_id(service: Resource, label_name: str) -> Optional[str]:
