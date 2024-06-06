@@ -2,7 +2,7 @@ import base64
 import os
 import time
 from email.message import EmailMessage
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 from bs4 import BeautifulSoup
 from google.auth.transport.requests import Request
@@ -44,7 +44,7 @@ def build_service() -> Optional[Resource]:
         if service is None:
             raise Exception("Failed to initialize Gmail service.")
         return service
-    except Exception:
+    except Exception as error:
         print(f"Error building the Gmail service: {error}")
         return None
 
