@@ -62,8 +62,7 @@ def get_label_id(service: Resource, label_name: str) -> Optional[str]:
 def create_label(service: Resource, label_name: str) -> None:
     """Creates a new label in the user's Gmail account."""
     try:
-        label_id = get_label_id(service, label_name)
-        label_body = {"addLabelIds": [label_id]}
+        label_body = {"name": label_name}
         service.users().labels().create(userId="me", body=label_body).execute()
     except HttpError:
         print("Invalid label name or label already exists.")
